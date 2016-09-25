@@ -1,8 +1,9 @@
 import xml.etree.ElementTree as xml
 import psycopg2
 import re
+import math
 
-tree = xml.parse("C:\Users\Ankur Bansal\Desktop\map.osm")
+tree = xml.parse("C:\Users\Ankur Bansal\Desktop\singapore.osm")
 root = tree.getroot()
 nodes = {}
 nodeId = 1000
@@ -24,7 +25,9 @@ def dbConnect():
 def parser():
     nodes = {}
     ways = {}
-    query = """INSERT INTO "public.osm_data" (id, osm_id, osm_name, osm_source_id, osm_target_id, source, target, kmh, x1, y1, x2, y2) VALUES(%s,%s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"""
+    query = """INSERT INTO "public.osm_data"
+    (id, osm_id, osm_name, osm_source_id, osm_target_id, clazz, source, target, km, kmh, x1, y1, x2, y2)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);"""
     conn = dbConnect()
     cur = conn.cursor()
     for elem in root:
@@ -46,31 +49,29 @@ def parser():
     for key,way in ways.iteritems():
         clazz = way['tags'].get('highway')
         if clazz:
-            id +=1
+            id += 1
             osm_id = key
             osm_name = way['tags'].get('name')
+            if(type(osm_name) == unicode):
+                osm_name = osm_name.encode("utf-8")
             osm_source_id = way['nodes'][0]
             osm_target_id = way['nodes'][-1]
-            source = longtoInt(osm_source_id)
-            target = longtoInt(osm_target_id)
+            source = int(longtoInt(osm_source_id))
+            target = int(longtoInt(osm_target_id))
             kmh = int(re.findall('\d+',way['tags'].get('maxspeed',"40"))[0])
-            x1 = nodes[osm_source_id]['lat']
-            y1 = nodes[osm_source_id]['lon']
-            x2 = nodes[osm_target_id]['lat']
-            y2 = nodes[osm_target_id]['lon']
-            if way['tags'].get('oneway') == "yes":
-                data = (id,osm_id,osm_name,osm_source_id,osm_target_id,source,target, kmh, x1, y1, x2, y2)
-                cur.execute(query,data)
-                conn.commit
-            else:
-                data = (id, osm_id, osm_name, osm_source_id, osm_target_id, source, target, kmh, x1, y1, x2, y2)
+            x1 = float(nodes[osm_source_id]['lat'])
+            y1 = float(nodes[osm_source_id]['lon'])
+            x2 = float(nodes[osm_target_id]['lat'])
+            y2 = float(nodes[osm_target_id]['lon'])
+            km = math.sqrt(math.pow((x1 - x2),2) + math.pow((y1 - y2),2))
+            data = (id, osm_id, osm_name, osm_source_id, osm_target_id, clazz, source, target, km, kmh, x1, y1, x2, y2)
+            cur.execute(query,data)
+            if not(way['tags'].get('oneway') == "yes"):
+                id += 1
+                data = (id, osm_id, osm_name, osm_target_id, osm_source_id, clazz, source, target, km, kmh, x2, y2, x1, y1)
                 cur.execute(query, data)
-                conn.commit
-                id +=1
-                data = (id, osm_id, osm_name, osm_target_id, osm_source_id, source, target, kmh, x2, y2, x1, y1)
-                cur.execute(query, data)
-                conn.commit
 
+    conn.commit()
     conn.close()
 
 parser()
